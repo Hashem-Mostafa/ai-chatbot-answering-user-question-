@@ -58,16 +58,20 @@ search_client = SearchClient(
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
 
 def extract_text_from_pdf(pdf_path):
+    """Extracts text from a PDF file."""
     text = ""
-    with open(pdf_path, "rb") as file:
-        reader = PyPDF2.PdfReader(file)
-        for page in reader.pages:
-            text += page.extract_text() or ""
+    try:
+        with open(pdf_path, "rb") as file:
+            reader = PyPDF2.PdfReader(file)
+            for page in reader.pages:
+                text += page.extract_text() or ""
+    except Exception as e:
+        print(f"❌ Error extracting text from PDF: {e}")
+        raise
     return text
 
-# Utility Function
 def upload_pdf_to_blob(file_path, blob_name):
-    """Uploads a PDF file to Azure Blob Storage and extracts text for indexing."""
+    """Uploads a PDF file to Azure Blob Storage and indexes its content in Azure AI Search."""
     try:
         blob_client = blob_service_client.get_blob_client(container=BLOB_CONTAINER_NAME, blob=blob_name)
         
@@ -82,20 +86,15 @@ def upload_pdf_to_blob(file_path, blob_name):
         print(f"✅ Successfully uploaded {blob_name} to Azure Blob Storage.")
 
         # Extract text from PDF
-        
         text = extract_text_from_pdf(file_path)
-        print("here the text:" + text)    
+        print("Extracted Text:", text)
 
         # Upload extracted text to Azure AI Search
         document = {
             "id": blob_name,
             "file_name": blob_name,
             "content": text  # Ensure this field is populated
-
         }
-
-        # # Debug: Print the document being indexed
-        # print("Document being indexed:", document)
 
         search_client.upload_documents(documents=[document])
         print(f"✅ Successfully indexed {blob_name} in Azure AI Search.")
@@ -108,13 +107,10 @@ def upload_pdf_to_blob(file_path, blob_name):
 def search_documents(query):
     """Searches the Azure AI Search index for relevant documents."""
     try:
-        print(query)
+        print(f"Searching for: {query}")
         results = search_client.search(search_text=query, top=1)
 
-        # # # Debug: Print the full search results
-        # for doc in results:
-        #     print("Search Result:", doc)
-
+        # Extract the content field
         retrieved_texts = [doc.get("content", "") for doc in results if "content" in doc]
         print("Retrieved Texts:", retrieved_texts)
         return "\n\n".join(retrieved_texts) if retrieved_texts else "No relevant documents found."
@@ -148,6 +144,7 @@ def generate_answer(question, retrieved_text, model="gpt-4o-2"):
 # Routes
 @app.route("/")
 def home():
+    """Renders the home page."""
     return render_template("index.html")
 
 @app.route("/upload", methods=["POST"])
@@ -165,11 +162,10 @@ def upload_pdf():
         file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         file.save(file_path)
         
-        print(file_path)
+        print(f"File saved to: {file_path}")
         blob_name = os.path.splitext(filename)[0]
         
         message = upload_pdf_to_blob(file_path, blob_name)
-
         return jsonify({"message": message}), 200
     else:
         return jsonify({"error": "Invalid file type. Only PDFs are allowed"}), 400
@@ -183,11 +179,10 @@ def chat():
         return jsonify({"error": "No query provided"}), 400
 
     retrieved_text = search_documents(user_query)
-    print(retrieved_text)
+    print(f"Retrieved Text: {retrieved_text}")
     if not retrieved_text or retrieved_text == "No relevant documents found.":
         return jsonify({"response": "No relevant information found in the document."})
     
-    print(retrieved_text)
     answer = generate_answer(user_query, retrieved_text)
     return jsonify({"response": answer})
 
