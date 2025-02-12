@@ -27,11 +27,9 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB file size limit
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION")
-
 AZURE_SEARCH_SERVICE_NAME = os.getenv("AZURE_SEARCH_SERVICE_NAME")
 AZURE_SEARCH_INDEX_NAME = os.getenv("AZURE_SEARCH_INDEX_NAME")
 AZURE_SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY")
-
 AZURE_STORAGE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 BLOB_CONTAINER_NAME = os.getenv("BLOB_CONTAINER_NAME")
 
@@ -58,20 +56,29 @@ search_client = SearchClient(
 blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
 
 def extract_text_from_pdf(pdf_path):
-    """Extracts text from a PDF file."""
+    """
+    Extracts text from a PDF file.
+    Args:
+        pdf_path (str): Path to the PDF file.
+    Returns:
+        str: Extracted text from the PDF file.
+    """
     text = ""
-    try:
-        with open(pdf_path, "rb") as file:
-            reader = PyPDF2.PdfReader(file)
-            for page in reader.pages:
-                text += page.extract_text() or ""
-    except Exception as e:
-        print(f"❌ Error extracting text from PDF: {e}")
-        raise
+    with open(pdf_path, "rb") as file:
+        reader = PyPDF2.PdfReader(file)
+        for page in reader.pages:
+            text += page.extract_text() or ""
     return text
 
 def upload_pdf_to_blob(file_path, blob_name):
-    """Uploads a PDF file to Azure Blob Storage and indexes its content in Azure AI Search."""
+    """
+    Uploads a PDF file to Azure Blob Storage and extracts text for indexing.
+    Args:
+        file_path (str): Path to the PDF file.
+        blob_name (str): Name of the blob in Azure Storage.
+    Returns:
+        str: Status message.
+    """
     try:
         blob_client = blob_service_client.get_blob_client(container=BLOB_CONTAINER_NAME, blob=blob_name)
         
@@ -87,13 +94,13 @@ def upload_pdf_to_blob(file_path, blob_name):
 
         # Extract text from PDF
         text = extract_text_from_pdf(file_path)
-        print("Extracted Text:", text)
+        print("Extracted text: " + text)    
 
         # Upload extracted text to Azure AI Search
         document = {
             "id": blob_name,
             "file_name": blob_name,
-            "content": text  # Ensure this field is populated
+            "content": text
         }
 
         search_client.upload_documents(documents=[document])
@@ -105,21 +112,32 @@ def upload_pdf_to_blob(file_path, blob_name):
         return "Error processing the file."
 
 def search_documents(query):
-    """Searches the Azure AI Search index for relevant documents."""
+    """
+    Searches the Azure AI Search index for relevant documents.
+    Args:
+        query (str): User's search query.
+    Returns:
+        str: Retrieved text from the search results.
+    """
     try:
-        print(f"Searching for: {query}")
         results = search_client.search(search_text=query, top=1)
 
-        # Extract the content field
         retrieved_texts = [doc.get("content", "") for doc in results if "content" in doc]
-        print("Retrieved Texts:", retrieved_texts)
         return "\n\n".join(retrieved_texts) if retrieved_texts else "No relevant documents found."
     except Exception as e:
         print(f"❌ Error during search_documents(): {e}")
         return ""
 
 def generate_answer(question, retrieved_text, model="gpt-4o-2"):
-    """Generates an answer using OpenAI's GPT model."""
+    """
+    Generates an answer using OpenAI's GPT model.
+    Args:
+        question (str): User's question.
+        retrieved_text (str): Relevant information retrieved from search.
+        model (str): OpenAI model to use.
+    Returns:
+        str: Generated answer.
+    """
     prompt = f"""
     **Question:** {question}
     **Relevant Information:**
@@ -141,7 +159,6 @@ def generate_answer(question, retrieved_text, model="gpt-4o-2"):
         print(f"❌ Error in generate_answer(): {e}")
         return "An error occurred while generating the answer."
 
-# Routes
 @app.route("/")
 def home():
     """Renders the home page."""
@@ -149,7 +166,11 @@ def home():
 
 @app.route("/upload", methods=["POST"])
 def upload_pdf():
-    """Handles PDF file uploads."""
+    """
+    Handles PDF file uploads.
+    Returns:
+        json: Status message.
+    """
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -162,24 +183,26 @@ def upload_pdf():
         file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
         file.save(file_path)
         
-        print(f"File saved to: {file_path}")
         blob_name = os.path.splitext(filename)[0]
-        
         message = upload_pdf_to_blob(file_path, blob_name)
+
         return jsonify({"message": message}), 200
     else:
         return jsonify({"error": "Invalid file type. Only PDFs are allowed"}), 400
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    """Handles user queries."""
+    """
+    Handles user queries.
+    Returns:
+        json: Response from the AI model.
+    """
     data = request.json
     user_query = data.get("query", "").strip()
     if not user_query:
         return jsonify({"error": "No query provided"}), 400
 
     retrieved_text = search_documents(user_query)
-    print(f"Retrieved Text: {retrieved_text}")
     if not retrieved_text or retrieved_text == "No relevant documents found.":
         return jsonify({"response": "No relevant information found in the document."})
     
