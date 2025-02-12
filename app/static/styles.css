@@ -1,0 +1,21 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+#upload-form {
+    margin-bottom: 20px;
+}
+
+#chat-window {
+    border: 1px solid #ccc;
+    padding: 10px;
+    width: 400px;
+    height: 300px;
+    overflow-y: scroll;
+}
+
+#chat-input {
+    width: 80%;
+    margin-top: 10px;
+}

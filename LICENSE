@@ -1,0 +1,12 @@
+#### **3. `requirements.txt`**
+List all dependencies:
+```txt
+Flask==2.3.2
+PyPDF2
+openai>=1.0.0
+azure-core==1.26.4
+flask
+azure-search-documents 
+azure-storage-blob 
+python-dotenv
+
